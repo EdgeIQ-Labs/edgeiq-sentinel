@@ -1,47 +1,78 @@
-# Sentinel
+# ⬡ Sentinel
 
-**Agentic QA Platform by EdgeIQ Labs**
+**Autonomous agentic QA by [EdgeIQ Labs](https://edgeiqlabs.com).**
 
-Sentinel is an autonomous QA platform where AI agents crawl web applications, discover bugs, and report findings — all orchestrated through a modern TypeScript monorepo.
+Point Sentinel at a URL. Autonomous AI agents explore every flow, click every button, fill every form, screenshot failures, log console errors, audit accessibility, and generate comprehensive reports. No scripts needed.
+
+Built by cybersecurity engineers. Runs entirely inside your own infrastructure. Your application data never leaves your network.
+
+## Quick Start
+
+```bash
+# Clone
+git clone https://github.com/EdgeIQ-Labs/edgeiq-sentinel.git
+cd edgeiq-sentinel
+
+# Configure
+cp .env.example .env
+# Edit .env with your LLM API key
+
+# Launch
+docker compose up -d
+
+# Dashboard → http://localhost:3000
+```
+
+## CLI Usage
+
+```bash
+# Trigger a scan from CI or terminal
+SENTINEL_API=http://localhost:3000 SENTINEL_TOKEN=your-token \
+  npx tsx packages/cli/src/index.ts run https://myapp.com --fail-on high
+```
+
+Exit codes: `0` = clean, `1` = findings at or above `--fail-on` threshold.
+
+## GitHub Action
+
+```yaml
+- uses: EdgeIQ-Labs/edgeiq-sentinel@main
+  with:
+    url: https://myapp.com
+    sentinel-api: https://sentinel.example.com
+    sentinel-token: ${{ secrets.SENTINEL_TOKEN }}
+    fail-on: high
+```
 
 ## Architecture
 
-- **`packages/api`** — Hono REST API server
-- **`packages/agent`** — Playwright + LLM orchestration engine
-- **`packages/worker`** — BullMQ job processors
-- **`packages/web`** — React + Vite SPA dashboard (dark/gothic cybersecurity theme)
-- **`packages/db`** — Drizzle ORM schema + PostgreSQL connection
+| Layer | Tech |
+|-------|------|
+| API | Hono (TypeScript) |
+| Frontend | React + Vite |
+| Database | PostgreSQL + Drizzle ORM |
+| Queue | BullMQ + Redis |
+| Browser | Playwright (Chromium) |
+| Agent | OpenAI-compatible LLM (works with Ollama/vLLM) |
+| Auth | Better Auth |
 
-## Tech Stack
+## Monetization
 
-Node.js 20+, pnpm, Hono, Drizzle ORM, PostgreSQL, Redis, BullMQ, Playwright (Chromium), React 18, Vite, TypeScript, better-auth
+| Community (Free) | Pro ($399) | Managed ($149/mo) |
+|---|---|---|
+| AGPL-3.0 | Multi-agent parallel | We host it |
+| Single agent | CI/CD integration | Team seats & RBAC |
+| Docker self-hosted | Custom assertions | Alert integrations |
 
-## Dev Setup
+## Development
 
 ```bash
-# Clone and install
-cd /home/guy/repos/edgeiq-sentinel
 pnpm install
-
-# Copy env
-cp .env.example .env
-
-# Start infrastructure
-docker compose up postgres redis -d
-
-# Push DB schema
-pnpm db:push
-
-# Run everything in dev mode
-pnpm dev
+pnpm --filter @sentinel/api dev    # API on :3000
+pnpm --filter @sentinel/web dev    # Vite on :5173
+pnpm --filter @sentinel/worker dev # BullMQ worker
 ```
 
-## Environment Variables
+## License
 
-See `.env.example` for required variables:
-- `DATABASE_URL` — PostgreSQL connection string
-- `REDIS_URL` — Redis connection string
-- `LLM_API_KEY` — API key for the LLM provider
-- `LLM_BASE_URL` — Base URL for LLM API
-- `BETTER_AUTH_SECRET` — Secret for better-auth
-- `PORT` — API server port (default 3000)
+AGPL-3.0 © 2026 EdgeIQ Labs

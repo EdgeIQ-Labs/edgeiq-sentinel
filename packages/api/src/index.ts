@@ -184,6 +184,24 @@ app.get('/api/baselines/:project_id', requireAuth, async (c) => {
   return c.json({ projectId: project_id, baselines: projectBaselines });
 });
 
+// --- Serve built SPA ---
+import { serveStatic } from '@hono/node-server/serve-static';
+import { existsSync } from 'fs';
+const spaDir = process.env.SPA_DIR || '../web/dist';
+if (existsSync(spaDir)) {
+  app.use('/*', serveStatic({ root: spaDir }));
+  // SPA fallback — any non-API route serves index.html
+  app.notFound(async (c) => {
+    const path = c.req.path;
+    if (!path.startsWith('/api')) {
+      const fs = await import('fs/promises');
+      const html = await fs.readFile(`${spaDir}/index.html`, 'utf-8').catch(() => null);
+      if (html) return c.html(html);
+    }
+    return c.text('Not Found', 404);
+  });
+}
+
 const port = Number(process.env.PORT) || 3000;
 console.log(`🚀 Sentinel API running on http://localhost:${port}`);
 serve({ fetch: app.fetch, port });
