@@ -31,6 +31,11 @@ app.get('/health', (c) => c.json({ status: 'ok' }));
 // --- Protected routes ---
 
 // Projects
+app.get('/api/projects', requireAuth, async (c) => {
+  const all = await db.select().from(projects);
+  return c.json(all);
+});
+
 app.post('/api/projects', requireAuth, async (c) => {
   const body = await c.req.json();
   const [project] = await db.insert(projects).values({
