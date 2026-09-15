@@ -12,8 +12,10 @@
     "@hono/node-server": "^1.13.0",
     "@sentinel/db": "workspace:*",
     "better-auth": "^1.0.0",
+    "bullmq": "^6.3.6",
     "drizzle-orm": "0.36.4",
-    "hono": "^4.6.0"
+    "hono": "^4.6.0",
+    "ioredis": "^6.0.0"
   },
   "devDependencies": {
     "tsx": "^4.19.0",

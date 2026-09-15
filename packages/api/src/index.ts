@@ -3,6 +3,7 @@ import { serve } from '@hono/node-server';
 import { db, projects, runs, findings, exploredPages, baselines, ciTriggers } from '@sentinel/db';
 import { eq } from 'drizzle-orm';
 import { auth } from './auth.js';
+import { crawlQueue } from './queue.js';
 
 const app = new Hono();
 
@@ -48,13 +49,38 @@ app.get('/api/projects/:id/runs', requireAuth, async (c) => {
 // Runs
 app.post('/api/runs', requireAuth, async (c) => {
   const body = await c.req.json();
+
+  // Look up project URL
+  const [project] = await db.select().from(projects).where(eq(projects.id, body.projectId));
+  if (!project) return c.json({ error: 'Project not found' }, 404);
+
+  // Create run record
   const [run] = await db.insert(runs).values({
     projectId: body.projectId,
     status: 'queued',
     triggerType: body.triggerType || 'manual',
     llmModel: body.llmModel,
   }).returning();
+
+  // Enqueue BullMQ job
+  await crawlQueue.add('crawl', {
+    runId: run.id,
+    projectId: body.projectId,
+    url: project.url,
+    llmApiKey: process.env.LLM_API_KEY || '',
+    llmBaseUrl: process.env.LLM_BASE_URL || 'https://api.openai.com/v1',
+    llmModel: body.llmModel,
+    maxSteps: body.maxSteps,
+  });
+
   return c.json(run, 201);
+});
+
+app.get('/api/runs/:id', requireAuth, async (c) => {
+  const { id } = c.req.param();
+  const [run] = await db.select().from(runs).where(eq(runs.id, id));
+  if (!run) return c.json({ error: 'Run not found' }, 404);
+  return c.json(run);
 });
 
 app.get('/api/runs/:id/findings', requireAuth, async (c) => {
@@ -72,12 +98,26 @@ app.post('/api/webhooks/ci/:token', async (c) => {
   if (!trigger) {
     return c.json({ error: 'Invalid webhook token' }, 403);
   }
+  // Look up project
+  const [project] = await db.select().from(projects).where(eq(projects.id, trigger.projectId));
+  if (!project) return c.json({ error: 'Project not found' }, 404);
+
   // Create a run triggered by CI
   const [run] = await db.insert(runs).values({
     projectId: trigger.projectId,
     status: 'queued',
     triggerType: 'ci',
   }).returning();
+
+  // Enqueue
+  await crawlQueue.add('crawl', {
+    runId: run.id,
+    projectId: trigger.projectId,
+    url: project.url,
+    llmApiKey: process.env.LLM_API_KEY || '',
+    llmBaseUrl: process.env.LLM_BASE_URL || 'https://api.openai.com/v1',
+  });
+
   return c.json({ received: true, runId: run.id }, 201);
 });
 

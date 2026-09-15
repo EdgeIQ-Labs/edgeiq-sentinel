@@ -12,6 +12,7 @@
     "@sentinel/agent": "workspace:*",
     "@sentinel/db": "workspace:*",
     "bullmq": "^5.25.0",
+    "drizzle-orm": "0.36.4",
     "ioredis": "^5.4.0"
   },
   "devDependencies": {
