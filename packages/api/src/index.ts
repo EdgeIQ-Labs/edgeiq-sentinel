@@ -1,44 +1,91 @@
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
+import { db, projects, runs, findings, exploredPages, baselines, ciTriggers } from '@sentinel/db';
+import { eq } from 'drizzle-orm';
+import { auth } from './auth.js';
 
 const app = new Hono();
 
-// Health check
-app.get('/health', (c) => c.json({ status: 'ok' }));
+// --- Auth middleware ---
+const requireAuth = async (c: any, next: any) => {
+  const session = await auth.api.getSession({
+    headers: c.req.raw.headers,
+  });
+  if (!session) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  c.set('user', session.user);
+  c.set('session', session.session);
+  await next();
+};
 
-// Projects
-app.post('/api/projects', async (c) => {
-  const body = await c.req.json();
-  return c.json({ id: crypto.randomUUID(), ...body, createdAt: new Date() }, 201);
+// Mount Better Auth routes at /api/auth/*
+app.on(['POST', 'GET'], '/api/auth/*', async (c) => {
+  return auth.handler(c.req.raw);
 });
 
-app.get('/api/projects/:id/runs', (c) => {
+// Health check (unauthenticated)
+app.get('/health', (c) => c.json({ status: 'ok' }));
+
+// --- Protected routes ---
+
+// Projects
+app.post('/api/projects', requireAuth, async (c) => {
+  const body = await c.req.json();
+  const [project] = await db.insert(projects).values({
+    name: body.name,
+    url: body.url,
+  }).returning();
+  return c.json(project, 201);
+});
+
+app.get('/api/projects/:id/runs', requireAuth, async (c) => {
   const { id } = c.req.param();
-  return c.json({ projectId: id, runs: [] });
+  const projectRuns = await db.select().from(runs).where(eq(runs.projectId, id));
+  return c.json({ projectId: id, runs: projectRuns });
 });
 
 // Runs
-app.post('/api/runs', async (c) => {
+app.post('/api/runs', requireAuth, async (c) => {
   const body = await c.req.json();
-  return c.json({ id: crypto.randomUUID(), status: 'pending', ...body }, 201);
+  const [run] = await db.insert(runs).values({
+    projectId: body.projectId,
+    status: 'queued',
+    triggerType: body.triggerType || 'manual',
+    llmModel: body.llmModel,
+  }).returning();
+  return c.json(run, 201);
 });
 
-app.get('/api/runs/:id/findings', (c) => {
+app.get('/api/runs/:id/findings', requireAuth, async (c) => {
   const { id } = c.req.param();
-  return c.json({ runId: id, findings: [] });
+  const runFindings = await db.select().from(findings).where(eq(findings.runId, id));
+  return c.json({ runId: id, findings: runFindings });
 });
 
-// CI Webhook
+// CI Webhook (uses token auth instead of session)
 app.post('/api/webhooks/ci/:token', async (c) => {
   const { token } = c.req.param();
   const body = await c.req.json();
-  return c.json({ received: true, token, body });
+  // Validate token against ci_triggers table
+  const [trigger] = await db.select().from(ciTriggers).where(eq(ciTriggers.webhookSecret, token));
+  if (!trigger) {
+    return c.json({ error: 'Invalid webhook token' }, 403);
+  }
+  // Create a run triggered by CI
+  const [run] = await db.insert(runs).values({
+    projectId: trigger.projectId,
+    status: 'queued',
+    triggerType: 'ci',
+  }).returning();
+  return c.json({ received: true, runId: run.id }, 201);
 });
 
 // Baselines
-app.get('/api/baselines/:project_id', (c) => {
+app.get('/api/baselines/:project_id', requireAuth, async (c) => {
   const { project_id } = c.req.param();
-  return c.json({ projectId: project_id, baselines: [] });
+  const projectBaselines = await db.select().from(baselines).where(eq(baselines.projectId, project_id));
+  return c.json({ projectId: project_id, baselines: projectBaselines });
 });
 
 const port = Number(process.env.PORT) || 3000;
