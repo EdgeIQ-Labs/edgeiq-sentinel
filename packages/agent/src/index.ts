@@ -119,12 +119,12 @@ export class SentinelAgent {
         const currentUrl = page.url();
         console.log(`[Sentinel] Step ${step + 1}/${this.config.maxSteps} — ${currentUrl}`);
 
-        // Observe: get accessibility tree
-        const snapshot = await page.accessibility.snapshot();
-        const treeText = JSON.stringify(snapshot, null, 2).slice(0, 8000); // cap tokens
+        // Observe: get accessibility tree (Playwright 1.49+ ariaSnapshot)
+        const treeText = await page.locator('body').ariaSnapshot().catch(() => '(unable to capture accessibility snapshot)');
+        const cappedTree = treeText.slice(0, 8000); // cap tokens
 
         // Decide: ask LLM what to do next
-        const action = await this.decide(treeText, currentUrl, step);
+        const action = await this.decide(cappedTree, currentUrl, step);
         if (!action || action.action === 'done') {
           console.log(`[Sentinel] Agent decided to stop at step ${step + 1}: ${action?.reason}`);
           break;
