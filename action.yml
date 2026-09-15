@@ -1,0 +1,47 @@
+name: 'Sentinel QA Scan'
+description: 'Run an autonomous QA scan against your app using Sentinel by EdgeIQ Labs'
+branding:
+  icon: 'shield'
+  color: 'red'
+
+inputs:
+  url:
+    description: 'Target URL to scan'
+    required: true
+  sentinel-api:
+    description: 'Sentinel API base URL'
+    required: false
+    default: ''
+  sentinel-token:
+    description: 'Sentinel API bearer token'
+    required: true
+  max-steps:
+    description: 'Maximum agent exploration steps'
+    required: false
+    default: '50'
+  fail-on:
+    description: 'Minimum severity to fail the pipeline (critical|high|medium|any)'
+    required: false
+    default: 'high'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Sentinel CLI
+      shell: bash
+      run: npm install -g @sentinel/cli@latest 2>/dev/null || echo "Using local build"
+
+    - name: Run Sentinel Scan
+      shell: bash
+      env:
+        SENTINEL_API: ${{ inputs.sentinel-api }}
+        SENTINEL_TOKEN: ${{ inputs.sentinel-token }}
+      run: |
+        ARGS="run ${{ inputs.url }} --max-steps ${{ inputs.max-steps }} --fail-on ${{ inputs.fail-on }}"
+        echo "⬡ Sentinel: $ARGS"
+        npx tsx packages/cli/src/index.ts $ARGS

@@ -5,6 +5,7 @@
     { "path": "packages/db" },
     { "path": "packages/agent" },
     { "path": "packages/worker" },
-    { "path": "packages/web" }
+    { "path": "packages/web" },
+    { "path": "packages/cli" }
   ]
 }

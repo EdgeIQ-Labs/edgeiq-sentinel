@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
-import { db, projects, runs, findings, exploredPages, baselines, ciTriggers } from '@sentinel/db';
+import { db, projects, runs, findings, exploredPages, baselines, ciTriggers, apiTokens } from '@sentinel/db';
 import { eq } from 'drizzle-orm';
 import { auth } from './auth.js';
 import { crawlQueue } from './queue.js';
@@ -9,6 +9,21 @@ const app = new Hono();
 
 // --- Auth middleware ---
 const requireAuth = async (c: any, next: any) => {
+  // Check Bearer token first (CLI/CI)
+  const authHeader = c.req.header('Authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    const tokenValue = authHeader.slice(7);
+    const [token] = await db.select().from(apiTokens).where(eq(apiTokens.token, tokenValue));
+    if (token && (!token.expiresAt || token.expiresAt > new Date())) {
+      await db.update(apiTokens).set({ lastUsedAt: new Date() }).where(eq(apiTokens.id, token.id));
+      c.set('userId', token.userId);
+      c.set('authMethod', 'token');
+      return next();
+    }
+    return c.json({ error: 'Invalid or expired API token' }, 401);
+  }
+
+  // Fall back to session auth (browser)
   const session = await auth.api.getSession({
     headers: c.req.raw.headers,
   });
@@ -17,6 +32,7 @@ const requireAuth = async (c: any, next: any) => {
   }
   c.set('user', session.user);
   c.set('session', session.session);
+  c.set('authMethod', 'session');
   await next();
 };
 
@@ -124,6 +140,41 @@ app.post('/api/webhooks/ci/:token', async (c) => {
   });
 
   return c.json({ received: true, runId: run.id }, 201);
+});
+
+// --- CLI-friendly run + poll endpoint ---
+app.post('/api/cli/run', requireAuth, async (c) => {
+  const body = await c.req.json();
+  const { url, maxSteps, llmModel } = body;
+  if (!url) return c.json({ error: 'url is required' }, 400);
+
+  // Find or create project by URL
+  let [project] = await db.select().from(projects).where(eq(projects.url, url));
+  if (!project) {
+    [project] = await db.insert(projects).values({
+      name: new URL(url).hostname,
+      url,
+    }).returning();
+  }
+
+  const [run] = await db.insert(runs).values({
+    projectId: project.id,
+    status: 'queued',
+    triggerType: 'ci',
+    llmModel,
+  }).returning();
+
+  await crawlQueue.add('crawl', {
+    runId: run.id,
+    projectId: project.id,
+    url,
+    llmApiKey: process.env.LLM_API_KEY || '',
+    llmBaseUrl: process.env.LLM_BASE_URL || 'https://api.openai.com/v1',
+    llmModel,
+    maxSteps,
+  });
+
+  return c.json({ runId: run.id, projectId: project.id, status: 'queued' }, 201);
 });
 
 // Baselines
