@@ -12,5 +12,8 @@
     "db:generate": "pnpm --filter @sentinel/db generate",
     "db:migrate": "pnpm --filter @sentinel/db migrate",
     "db:push": "pnpm --filter @sentinel/db push"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1"
   }
 }
