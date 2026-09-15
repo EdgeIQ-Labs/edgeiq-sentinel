@@ -43,14 +43,24 @@ Rules:
 - Do NOT repeat actions you've already taken. Track your path mentally.
 - Output ONLY valid JSON, no markdown fences.`;
 
+function addFinding(findings: Finding[], keys: Set<string>, f: Finding) {
+  const key = `${f.type}:${f.title}:${f.url}:${f.description.slice(0, 80)}`;
+  if (keys.has(key)) return; // dedup
+  keys.add(key);
+  findings.push(f);
+}
+
 export class SentinelAgent {
   private config: Required<AgentConfig>;
   private browser: Browser | null = null;
   private llm: OpenAI;
   private findings: Finding[] = [];
+  private findingKeys: Set<string> = new Set(); // dedup tracker
   private visitedUrls: Set<string> = new Set();
   private consoleErrors: string[] = [];
   private networkErrors: { url: string; status: number; method: string }[] = [];
+  private actionHistory: string[] = []; // track past actions to avoid loops
+  private authRetries: Map<string, number> = new Map(); // url -> retry count
 
   constructor(config: AgentConfig) {
     this.config = {
@@ -68,9 +78,12 @@ export class SentinelAgent {
 
   async crawl(url: string): Promise<Finding[]> {
     this.findings = [];
+    this.findingKeys.clear();
     this.visitedUrls.clear();
     this.consoleErrors = [];
     this.networkErrors = [];
+    this.actionHistory = [];
+    this.authRetries.clear();
 
     this.browser = await chromium.launch({ headless: this.config.headless });
     const context = await this.browser.newContext({
@@ -84,7 +97,7 @@ export class SentinelAgent {
       if (msg.type() === 'error') {
         const text = msg.text();
         this.consoleErrors.push(text);
-        this.findings.push({
+        addFinding(this.findings, this.findingKeys, {
           type: 'console',
           severity: 'medium',
           title: 'Console Error',
@@ -101,7 +114,7 @@ export class SentinelAgent {
         const reqUrl = response.url();
         const method = response.request().method();
         this.networkErrors.push({ url: reqUrl, status, method });
-        this.findings.push({
+        addFinding(this.findings, this.findingKeys, {
           type: 'network',
           severity: status >= 500 ? 'high' : 'medium',
           title: `HTTP ${status} on ${method}`,
@@ -144,7 +157,7 @@ export class SentinelAgent {
       }
     } catch (err) {
       console.error('[Sentinel] Crawl error:', err);
-      this.findings.push({
+      addFinding(this.findings, this.findingKeys, {
         type: 'bug',
         severity: 'critical',
         title: 'Agent crash during crawl',
@@ -173,8 +186,18 @@ export class SentinelAgent {
 
       const raw = response.choices[0]?.message?.content?.trim() || '';
       // Strip markdown fences if LLM ignores instructions
-      const cleaned = raw.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '');
-      const parsed = JSON.parse(cleaned);
+      let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      // Extract first JSON object if LLM adds conversational text around it
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (jsonMatch) cleaned = jsonMatch[0];
+      
+      let parsed;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        console.warn('[Sentinel] LLM returned non-JSON:', raw.slice(0, 200));
+        return null;
+      }
       const result = ActionSchema.safeParse(parsed);
 
       if (result.success) return result.data;
@@ -187,17 +210,40 @@ export class SentinelAgent {
   }
 
   private async execute(page: Page, action: Action): Promise<void> {
+    // Build action signature for loop detection
+    const sig = `${action.action}:${action.selector || ''}:${action.value || ''}`;
+    if (this.actionHistory.filter(a => a === sig).length >= 2) {
+      console.warn(`[Sentinel] Skipping repeated action: ${sig}`);
+      return; // don't repeat the same action more than twice
+    }
+    this.actionHistory.push(sig);
+
+    // Auth retry limit — if we keep hitting the same URL with fill+click, stop after 3 tries
+    const currentUrl = page.url();
+    if (action.action === 'fill' || action.action === 'click') {
+      const retries = (this.authRetries.get(currentUrl) || 0) + 1;
+      this.authRetries.set(currentUrl, retries);
+      if (retries > 6) { // 3 fill+click pairs
+        console.warn(`[Sentinel] Auth retry limit hit on ${currentUrl}, moving on`);
+        return;
+      }
+    } else {
+      this.authRetries.delete(currentUrl); // reset on navigation
+    }
+
     try {
       switch (action.action) {
         case 'click':
           if (action.selector) {
-            await page.click(action.selector, { timeout: 5000 });
+            const clickLoc = await this.resolveLocator(page, action.selector);
+            await clickLoc.click({ timeout: 5000 });
             console.log(`[Sentinel] Clicked: ${action.selector} (${action.reason})`);
           }
           break;
         case 'fill':
           if (action.selector && action.value) {
-            await page.fill(action.selector, action.value, { timeout: 5000 });
+            const fillLoc = await this.resolveLocator(page, action.selector);
+            await fillLoc.fill(action.value, { timeout: 5000 });
             console.log(`[Sentinel] Filled: ${action.selector} = "${action.value}"`);
           }
           break;
@@ -212,8 +258,8 @@ export class SentinelAgent {
           break;
       }
     } catch (err) {
-      console.warn(`[Sentinel] Action failed: ${action.action} ${action.selector || action.value} — ${err}`);
-      this.findings.push({
+      console.warn(`[Sentinel] Action failed: ${action.action} ${action.selector || action.value} — ${(err as Error).message?.slice(0, 100)}`);
+      addFinding(this.findings, this.findingKeys, {
         type: 'bug',
         severity: 'low',
         title: `Action failed: ${action.action}`,
@@ -221,6 +267,31 @@ export class SentinelAgent {
         url: page.url(),
       });
     }
+  }
+
+  /** Resolve a selector string to a Playwright Locator with fallbacks */
+  private async resolveLocator(page: Page, selector: string) {
+    // Already a valid role/text/getBy selector
+    if (selector.startsWith('role=') || selector.startsWith('text=') || selector.startsWith('#') || selector.startsWith('.')) {
+      return page.locator(selector);
+    }
+    // Try as CSS first
+    try {
+      const loc = page.locator(selector);
+      await loc.first().waitFor({ state: 'attached', timeout: 2000 });
+      return loc;
+    } catch {
+      // Fall through to text-based fallbacks
+    }
+    // Fallback: try getByText or getByRole with the raw string
+    const cleaned = selector.replace(/^[a-z]+\s+/i, '').replace(/["']/g, '');
+    if (cleaned) {
+      const byText = page.getByText(cleaned, { exact: false });
+      const count = await byText.count();
+      if (count > 0) return byText.first();
+    }
+    // Last resort: original selector
+    return page.locator(selector);
   }
 
   async takeScreenshot(page: Page, name: string): Promise<string> {
