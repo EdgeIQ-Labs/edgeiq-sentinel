@@ -1,0 +1,32 @@
+:root {
+  --bg: #0b0f14;
+  --surface: #131820;
+  --border: #1e2530;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --red: #ff1a1a;
+  --purple: #c084fc;
+  --green: #22c55e;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  min-height: 100vh;
+}
+
+a {
+  color: var(--purple);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--red);
+}

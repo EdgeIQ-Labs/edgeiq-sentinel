@@ -1,0 +1,16 @@
+{
+  "name": "edgeiq-sentinel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agentic QA platform by EdgeIQ Labs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "db:generate": "pnpm --filter @sentinel/db generate",
+    "db:migrate": "pnpm --filter @sentinel/db migrate",
+    "db:push": "pnpm --filter @sentinel/db push"
+  }
+}
