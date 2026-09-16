@@ -6,9 +6,9 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "generate": "drizzle-kit generate",
-    "migrate": "drizzle-kit migrate",
-    "push": "drizzle-kit push"
+    "generate": "drizzle-kit generate --config ../../drizzle.config.ts",
+    "migrate": "drizzle-kit migrate --config ../../drizzle.config.ts",
+    "push": "drizzle-kit push --config ../../drizzle.config.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.36.0",
