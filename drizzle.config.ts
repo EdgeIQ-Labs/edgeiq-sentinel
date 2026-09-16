@@ -5,6 +5,6 @@ export default defineConfig({
   out: new URL('./packages/db/drizzle', import.meta.url).pathname,
   dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/sentinel',
+    url: process.env.DATABASE_URL || 'postgresql://postgres:sentinel123@localhost:5435/sentinel',
   },
 });
