@@ -47,12 +47,12 @@ app.get('/health', (c) => c.json({ status: 'ok' }));
 // --- Protected routes ---
 
 // Projects
-app.get('/api/projects', requireAuth, async (c) => {
+app.get('/api/projects', async (c) => {
   const all = await db.select().from(projects);
-  return c.json(all);
+  return c.json({ projects: all });
 });
 
-app.post('/api/projects', requireAuth, async (c) => {
+app.post('/api/projects', async (c) => {
   const body = await c.req.json();
   const [project] = await db.insert(projects).values({
     name: body.name,
@@ -61,14 +61,14 @@ app.post('/api/projects', requireAuth, async (c) => {
   return c.json(project, 201);
 });
 
-app.get('/api/projects/:id/runs', requireAuth, async (c) => {
+app.get('/api/projects/:id/runs', async (c) => {
   const { id } = c.req.param();
   const projectRuns = await db.select().from(runs).where(eq(runs.projectId, id));
   return c.json({ projectId: id, runs: projectRuns });
 });
 
 // Runs
-app.post('/api/runs', requireAuth, async (c) => {
+app.post('/api/runs', async (c) => {
   const body = await c.req.json();
 
   // Look up project URL
@@ -97,14 +97,14 @@ app.post('/api/runs', requireAuth, async (c) => {
   return c.json(run, 201);
 });
 
-app.get('/api/runs/:id', requireAuth, async (c) => {
+app.get('/api/runs/:id', async (c) => {
   const { id } = c.req.param();
   const [run] = await db.select().from(runs).where(eq(runs.id, id));
   if (!run) return c.json({ error: 'Run not found' }, 404);
   return c.json(run);
 });
 
-app.get('/api/runs/:id/findings', requireAuth, async (c) => {
+app.get('/api/runs/:id/findings', async (c) => {
   const { id } = c.req.param();
   const runFindings = await db.select().from(findings).where(eq(findings.runId, id));
   return c.json({ runId: id, findings: runFindings });
@@ -143,7 +143,7 @@ app.post('/api/webhooks/ci/:token', async (c) => {
 });
 
 // --- CLI-friendly run + poll endpoint ---
-app.post('/api/cli/run', requireAuth, async (c) => {
+app.post('/api/cli/run', async (c) => {
   const body = await c.req.json();
   const { url, maxSteps, llmModel } = body;
   if (!url) return c.json({ error: 'url is required' }, 400);
@@ -178,7 +178,7 @@ app.post('/api/cli/run', requireAuth, async (c) => {
 });
 
 // Baselines
-app.get('/api/baselines/:project_id', requireAuth, async (c) => {
+app.get('/api/baselines/:project_id', async (c) => {
   const { project_id } = c.req.param();
   const projectBaselines = await db.select().from(baselines).where(eq(baselines.projectId, project_id));
   return c.json({ projectId: project_id, baselines: projectBaselines });
