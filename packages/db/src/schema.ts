@@ -66,7 +66,7 @@ export const ciTriggers = pgTable('ci_triggers', {
 });
 
 // --- Better Auth tables ---
-export const users = pgTable('users', {
+export const user = pgTable('user', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: text('name').notNull(),
   email: text('email').notNull().unique(),
@@ -76,9 +76,9 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-export const sessions = pgTable('sessions', {
+export const session = pgTable('session', {
   id: uuid('id').defaultRandom().primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id),
+  userId: uuid('user_id').notNull().references(() => user.id),
   token: text('token').notNull().unique(),
   expiresAt: timestamp('expires_at').notNull(),
   ipAddress: text('ip_address'),
@@ -87,9 +87,9 @@ export const sessions = pgTable('sessions', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-export const accounts = pgTable('accounts', {
+export const account = pgTable('account', {
   id: uuid('id').defaultRandom().primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id),
+  userId: uuid('user_id').notNull().references(() => user.id),
   accountId: text('account_id').notNull(),
   providerId: text('provider_id').notNull(),
   accessToken: text('access_token'),
@@ -102,7 +102,7 @@ export const accounts = pgTable('accounts', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-export const verifications = pgTable('verifications', {
+export const verification = pgTable('verification', {
   id: uuid('id').defaultRandom().primaryKey(),
   identifier: text('identifier').notNull(),
   value: text('value').notNull(),
@@ -114,7 +114,7 @@ export const verifications = pgTable('verifications', {
 // --- API tokens for CLI / CI ---
 export const apiTokens = pgTable('api_tokens', {
   id: uuid('id').defaultRandom().primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id),
+  userId: uuid('user_id').notNull().references(() => user.id),
   name: text('name').notNull(),
   token: text('token').notNull().unique(),
   expiresAt: timestamp('expires_at'),
